@@ -30,11 +30,21 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided) {
 int MPI_Allreduce(const void *sendbuf, void *recvbuf, int count,
                   MPI_Datatype datatype, MPI_Op op, MPI_Comm comm) {
 
-  count_metrics(sendbuf, recvbuf, count, datatype);
+  count_metric_ar(count, datatype);
   return PMPI_Allreduce(sendbuf, recvbuf, count, datatype, op, comm);
 }
 
+int MPI_Bcast(void *buffer, int count,
+                  MPI_Datatype datatype, int root, MPI_Comm comm) {
+
+  count_metric_bc(count, datatype);
+  return PMPI_Bcast(buffer, count, datatype, root, comm);
+}
+
 int MPI_Finalize(void) {
-  print_metrics();
+  int rank;
+  PMPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  if(rank == 0)
+    print_metrics();
   return PMPI_Finalize();
 }
