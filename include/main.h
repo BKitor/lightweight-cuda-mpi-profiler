@@ -40,10 +40,11 @@ int MPI_Bcast(void *buffer, int count,
 // Metrics we will profile
 #define COLL_COUNT_MAX 32 
 typedef struct lwcmp_data_t {
-  double msize_time[COLL_COUNT_MAX];
+  double msize_times[COLL_COUNT_MAX];
   int64_t msize_counts[COLL_COUNT_MAX];
 } lwcmp_data_t;
 
 lwcmp_data_t lwcmp_data;
+lwcmp_data_t lwcmp_data_cuda;
 
 #endif // MAIN_H

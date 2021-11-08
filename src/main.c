@@ -20,20 +20,22 @@
 static inline void init_metrics() {
   for(int32_t i = 0; i<COLL_COUNT_MAX; i++){
     lwcmp_data.msize_counts[i] = 0;
-    lwcmp_data.msize_time[i] = 0.0;
+    lwcmp_data.msize_times[i] = 0.0;
+    lwcmp_data_cuda.msize_counts[i] = 0;
+    lwcmp_data_cuda.msize_times[i] = 0.0;
   }
 }
 
-static inline void count_metric_ar(int count, MPI_Datatype datatype, double time) {
+static inline void count_metric_ar(int count, MPI_Datatype datatype, double time, lwcmp_data_t *data) {
   int32_t msize = get_MPI_message_size(datatype, count);
   
   int idx = __builtin_clz(msize);
   idx = 32 - idx;
-  lwcmp_data.msize_counts[idx]++;
-  lwcmp_data.msize_time[idx]+= time;
+  data->msize_counts[idx]++;
+  data->msize_times[idx]+= time;
 }
 
-static inline void print_metrics() {
+static inline void print_metrics(lwcmp_data_t * d, int32_t size) {
   char *suffix[] = {"B", "KB", "MB", "GB", "TB"};
   char length = sizeof(suffix) / sizeof(suffix[0]);
   static char output[256];
@@ -51,16 +53,33 @@ static inline void print_metrics() {
 
     printf("%ld%s\tcount:%-*ld time:%.2f us\n", 
       dblBytes, suffix[suf_idx],
-      10, lwcmp_data.msize_counts[msize], 
-      lwcmp_data.msize_time[msize]*1e6);
+      10, d->msize_counts[msize]/size, 
+      d->msize_times[msize]*1e6/(double)size);
   }
 }
 
 static inline void cleanup_metrics(double f_time){
-  int rank;
+  int rank, size;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank == 0)
-    print_metrics();
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+  if (rank != 0){
+    PMPI_Reduce(lwcmp_data.msize_times, NULL, 32, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    PMPI_Reduce(lwcmp_data.msize_counts, NULL, 32, MPI_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    PMPI_Reduce(lwcmp_data_cuda.msize_times, NULL, 32, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    PMPI_Reduce(lwcmp_data_cuda.msize_counts, NULL, 32, MPI_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+  }else{
+    PMPI_Reduce(MPI_IN_PLACE, lwcmp_data.msize_times, 32, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    PMPI_Reduce(MPI_IN_PLACE, lwcmp_data.msize_counts, 32, MPI_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    PMPI_Reduce(MPI_IN_PLACE, lwcmp_data_cuda.msize_times, 32, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    PMPI_Reduce(MPI_IN_PLACE, lwcmp_data_cuda.msize_counts, 32, MPI_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    printf("LWMP CPU METRICS:\n");
+    print_metrics(&lwcmp_data, size);
+    printf("LWMP GPU METRICS:\n");
+    print_metrics(&lwcmp_data_cuda, size);
+  }
+  
 }
 
 int MPI_Init(int *argc, char ***argv) {
@@ -77,12 +96,17 @@ int MPI_Allreduce(const void *sendbuf, void *recvbuf, int count,
                   MPI_Datatype datatype, MPI_Op op, MPI_Comm comm) {
   double s_time, e_time;
   int ret;
+  lwcmp_data_t *d = &lwcmp_data;
 
   s_time = MPI_Wtime();
   ret = PMPI_Allreduce(sendbuf, recvbuf, count, datatype, op, comm);
   e_time = MPI_Wtime();
+  
+  if(is_device_pointer(recvbuf))
+    d = &lwcmp_data_cuda;
 
-  count_metric_ar(count, datatype, e_time - s_time);
+  count_metric_ar(count, datatype, e_time - s_time, d);
+
   return ret;
 }
 
