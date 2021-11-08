@@ -20,6 +20,7 @@
 
 #include "mpi.h"
 #include <stdio.h>
+#include <stdint.h>
 #include "cuda_helpers.h"
 #include "mpi_helpers.h"
 
@@ -37,81 +38,12 @@ int MPI_Bcast(void *buffer, int count,
                   MPI_Datatype datatype, int root, MPI_Comm comm);
 
 // Metrics we will profile
-#define COLL_COUNT_MAX 32 //32MB
-int ar_arr[COLL_COUNT_MAX];
-int bc_arr[COLL_COUNT_MAX];
+#define COLL_COUNT_MAX 32 
+typedef struct lwcmp_data_t {
+  double msize_time[COLL_COUNT_MAX];
+  int64_t msize_counts[COLL_COUNT_MAX];
+} lwcmp_data_t;
 
-// Functions to count metrics
-static inline void init_metrics() {
-  for(int i = 0; i<COLL_COUNT_MAX; i++){
-    ar_arr[i] = 0;
-    bc_arr[i] = 0;
-  }
-
-  printf("initialized arrays of size %ld\n",sizeof(ar_arr)/sizeof(int));
-  // Add other metrics
-}
-static inline void count_metric_bc(int count,
-                                 MPI_Datatype datatype) {
-  int buffer_size = get_MPI_message_size(datatype, count);
-
-  // see: https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-  // bit criptic, but essentialy rounds down 
-  //buffer_size--;
-  buffer_size |= buffer_size>>1;
-  buffer_size |= buffer_size>>2;
-  buffer_size |= buffer_size>>4;
-  buffer_size |= buffer_size>>8;
-  buffer_size |= buffer_size>>16;
-  buffer_size++;
-  buffer_size>>=1;
-
-  if(buffer_size == 0)
-    bc_arr[0]++;
-  else
-    for(int i = 1; i<COLL_COUNT_MAX; i++)
-      if(1<<i & buffer_size)bc_arr[i]++;
-
-
-  // Add other metrics
-}
-
-static inline void count_metric_ar(int count,
-                                 MPI_Datatype datatype) {
-  int buffer_size = get_MPI_message_size(datatype, count);
-
-  // see: https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-  // bit criptic, but essentialy rounds down 
-  //buffer_size--;
-  buffer_size |= buffer_size>>1;
-  buffer_size |= buffer_size>>2;
-  buffer_size |= buffer_size>>4;
-  buffer_size |= buffer_size>>8;
-  buffer_size |= buffer_size>>16;
-  buffer_size++;
-  buffer_size>>=1;
-
-  if(buffer_size == 0)
-    ar_arr[0]++;
-  else
-    for(int i = 1; i<COLL_COUNT_MAX; i++)
-      if(1<<i & buffer_size)ar_arr[i]++;
-
-
-  // Add other metrics
-}
-
-static inline void print_metrics() {
-  printf("Allreudce sizes:\n");
-  for(int i = 0; i<COLL_COUNT_MAX; i++)
-    printf("%d\t%d\n",1<<(i-1), ar_arr[i]);
-
-  printf("Broadcast sizes:\n");
-  for(int i = 0; i<COLL_COUNT_MAX; i++)
-    printf("%d\t%d\n",1<<(i-1), bc_arr[i]);
-  
-
-  // Add other metrics
-}
+lwcmp_data_t lwcmp_data;
 
 #endif // MAIN_H
